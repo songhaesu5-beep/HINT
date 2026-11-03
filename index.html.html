@@ -1,0 +1,652 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>SMART FACTORY : LINE RUSH</title>
+<link rel="stylesheet" as="style" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css" />
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; -webkit-user-select: none; }
+  body {
+    font-family: 'Pretendard', sans-serif;
+    background: #060b14;
+    color: #fff;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 100vh;
+    overflow: hidden;
+    touch-action: manipulation;
+  }
+  /* 아케이드 기기 프레임 + 실제 자동차 조립 라인 배경 사진 */
+  #game-wrapper {
+    width: 100%;
+    max-width: 390px;
+    height: 100vh;
+    max-height: 760px;
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    background: linear-gradient(180deg, rgba(6, 12, 24, 0.88) 0%, rgba(0, 44, 95, 0.78) 50%, rgba(6, 12, 24, 0.96) 100%),
+                url('https://images.unsplash.com/photo-1581091226825-a6a2a5aee158?auto=format&fit=crop&w=900&q=80') center/cover no-repeat;
+    box-shadow: 0 0 50px rgba(0, 170, 255, 0.25), inset 0 0 2px rgba(255, 255, 255, 0.3);
+    border: 1px solid rgba(0, 195, 255, 0.25);
+    overflow: hidden;
+  }
+  /* 상단 HUD 대시보드 */
+  #hud {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px;
+    padding: 12px 14px;
+    background: rgba(8, 17, 34, 0.82);
+    backdrop-filter: blur(12px);
+    border-bottom: 1px solid rgba(0, 195, 255, 0.3);
+    z-index: 5;
+  }
+  .hud-card {
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 10px;
+    padding: 6px 4px;
+    text-align: center;
+  }
+  .hud-label {
+    font-size: 10px;
+    font-weight: 700;
+    color: #60a5fa;
+    letter-spacing: 1px;
+    margin-bottom: 3px;
+  }
+  .hud-value {
+    font-size: 20px;
+    font-weight: 900;
+    letter-spacing: 0.5px;
+    color: #ffffff;
+    text-shadow: 0 0 10px rgba(56, 189, 248, 0.6);
+  }
+  .warn-dots {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 5px;
+    height: 24px;
+  }
+  .dot {
+    width: 11px;
+    height: 11px;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.15);
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    transition: 0.2s;
+  }
+  .dot.active {
+    background: #ff3b5c;
+    border-color: #ff8fa3;
+    box-shadow: 0 0 10px #ff3b5c;
+  }
+
+  /* 중앙 컨베이어 캔버스 영역 */
+  #stage {
+    position: relative;
+    flex: 1;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    overflow: hidden;
+  }
+  canvas {
+    width: 100%;
+    height: 100%;
+    display: block;
+  }
+
+  /* 하단 컨트롤 독 (3개 버튼) */
+  #controls {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 10px;
+    padding: 12px 14px 20px;
+    background: rgba(6, 12, 24, 0.92);
+    border-top: 1px solid rgba(0, 195, 255, 0.3);
+    z-index: 5;
+  }
+  .ctrl-btn {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 12px 6px 10px;
+    border-radius: 14px;
+    background: linear-gradient(160deg, rgba(25, 38, 62, 0.95), rgba(12, 20, 36, 0.95));
+    border: 1.5px solid rgba(255, 255, 255, 0.15);
+    box-shadow: 0 6px 0 #050912, 0 8px 16px rgba(0, 0, 0, 0.5);
+    cursor: pointer;
+    transition: transform 0.06s, box-shadow 0.06s, filter 0.1s;
+  }
+  .ctrl-btn:active, .ctrl-btn.pressed {
+    transform: translateY(4px);
+    box-shadow: 0 2px 0 #050912, 0 3px 8px rgba(0, 0, 0, 0.4);
+    filter: brightness(1.25);
+  }
+  .ctrl-btn[data-type="0"] { border-color: #ff4757; box-shadow: 0 5px 0 #6b111b, 0 0 15px rgba(255, 71, 87, 0.2); }
+  .ctrl-btn[data-type="1"] { border-color: #00d2ff; box-shadow: 0 5px 0 #004e66, 0 0 15px rgba(0, 210, 255, 0.2); }
+  .ctrl-btn[data-type="2"] { border-color: #2ed573; box-shadow: 0 5px 0 #0f5229, 0 0 15px rgba(46, 213, 115, 0.2); }
+
+  .key-badge {
+    position: absolute;
+    top: 6px;
+    left: 8px;
+    font-size: 10px;
+    font-weight: 800;
+    padding: 2px 5px;
+    border-radius: 4px;
+    background: rgba(255, 255, 255, 0.14);
+    color: #cbd5e1;
+  }
+  .btn-label {
+    margin-top: 6px;
+    font-size: 12px;
+    font-weight: 800;
+    letter-spacing: 0.5px;
+    color: #f1f5f9;
+  }
+
+  /* 시작 & 게임오버 모달 화면 */
+  #overlay {
+    position: absolute;
+    inset: 0;
+    background: rgba(5, 10, 20, 0.84);
+    backdrop-filter: blur(8px);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    padding: 20px;
+    z-index: 20;
+  }
+  .modal-card {
+    width: 100%;
+    background: linear-gradient(165deg, rgba(16, 30, 54, 0.96), rgba(8, 16, 30, 0.98));
+    border: 1px solid rgba(0, 195, 255, 0.4);
+    border-radius: 20px;
+    padding: 24px 20px;
+    text-align: center;
+    box-shadow: 0 20px 50px rgba(0, 0, 0, 0.7), 0 0 30px rgba(0, 140, 255, 0.25);
+  }
+  .hero-banner {
+    width: 100%;
+    height: 115px;
+    border-radius: 12px;
+    margin-bottom: 16px;
+    background: linear-gradient(0deg, rgba(0,44,95,0.7), rgba(0,0,0,0.2)),
+                url('https://images.unsplash.com/photo-1617788138017-80ad40651399?auto=format&fit=crop&w=700&q=80') center/cover no-repeat;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    display: flex;
+    align-items: flex-end;
+    padding: 10px 12px;
+  }
+  .badge-tag {
+    background: #002C5F;
+    border: 1px solid #38bdf8;
+    color: #e0f2fe;
+    font-size: 11px;
+    font-weight: 800;
+    padding: 4px 10px;
+    border-radius: 99px;
+    letter-spacing: 0.8px;
+  }
+  #modal-title {
+    font-size: 26px;
+    font-weight: 900;
+    letter-spacing: -0.5px;
+    margin-bottom: 8px;
+    background: linear-gradient(90deg, #ffffff, #7dd3fc);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+  #modal-desc {
+    font-size: 14px;
+    color: #94a3b8;
+    line-height: 1.5;
+    margin-bottom: 20px;
+    white-space: pre-line;
+  }
+  .result-box {
+    display: none;
+    background: rgba(0, 195, 255, 0.1);
+    border: 1px solid rgba(0, 195, 255, 0.35);
+    border-radius: 12px;
+    padding: 14px;
+    margin-bottom: 18px;
+  }
+  .result-score {
+    font-size: 32px;
+    font-weight: 900;
+    color: #38bdf8;
+    text-shadow: 0 0 15px rgba(56, 189, 248, 0.5);
+  }
+  #action-btn {
+    width: 100%;
+    padding: 15px;
+    font-size: 18px;
+    font-weight: 900;
+    color: #fff;
+    background: linear-gradient(90deg, #002C5F 0%, #0066cc 50%, #00a8ff 100%);
+    border: 1px solid #7dd3fc;
+    border-radius: 12px;
+    cursor: pointer;
+    box-shadow: 0 0 20px rgba(0, 168, 255, 0.5);
+    transition: transform 0.1s;
+  }
+  #action-btn:active { transform: scale(0.97); }
+</style>
+</head>
+<body>
+
+<div id="game-wrapper">
+  <!-- 상단 플레이 정보 (점수, 남은 시간, 틀린 개수) -->
+  <div id="hud">
+    <div class="hud-card">
+      <div class="hud-label">PACKED</div>
+      <div class="hud-value" id="score-val">0</div>
+    </div>
+    <div class="hud-card">
+      <div class="hud-label">TIME LEFT</div>
+      <div class="hud-value" id="time-val">60.0</div>
+    </div>
+    <div class="hud-card">
+      <div class="hud-label">DEFECT (MAX 4)</div>
+      <div class="warn-dots" id="mistake-dots">
+        <span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="dot"></span>
+      </div>
+    </div>
+  </div>
+
+  <!-- 중앙 컨베이어 벨트 캔버스 -->
+  <div id="stage">
+    <canvas id="game-canvas" width="360" height="460"></canvas>
+
+    <!-- 시작 화면 / 게임오버 화면 모달 -->
+    <div id="overlay">
+      <div class="modal-card">
+        <div class="hero-banner">
+          <span class="badge-tag">SMART PLANT LOGISTICS</span>
+        </div>
+        <h1 id="modal-title">생산 라인 분류</h1>
+        <p id="modal-desc">0.7초 안에 내려오는 자동차 핵심 부품을<br>맞는 서열 박스로 정확히 분류하세요!</p>
+        <div class="result-box" id="result-box">
+          <div style="font-size:12px; color:#94a3b8; margin-bottom:4px;">최종 납품 실적</div>
+          <div class="result-score" id="final-pack">패킹 0개</div>
+        </div>
+        <button id="action-btn">생산 라인 가동 (START)</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 하단 조작 버튼 3개 (모바일 터치 & PC 1,2,3 키 연동) -->
+  <div id="controls">
+    <button class="ctrl-btn" data-type="0" id="btn-0">
+      <span class="key-badge">KEY 1</span>
+      <svg width="38" height="38" viewBox="0 0 48 48" fill="none">
+        <circle cx="24" cy="24" r="19" stroke="#ff4757" stroke-width="5" stroke-dasharray="6 3"/>
+        <circle cx="24" cy="24" r="11" stroke="#ff6b81" stroke-width="3"/>
+        <circle cx="24" cy="24" r="4" fill="#ff4757"/>
+      </svg>
+      <span class="btn-label">타이어 모듈</span>
+    </button>
+    <button class="ctrl-btn" data-type="1" id="btn-1">
+      <span class="key-badge">KEY 2</span>
+      <svg width="38" height="38" viewBox="0 0 48 48" fill="none">
+        <rect x="10" y="14" width="28" height="22" rx="4" stroke="#00d2ff" stroke-width="3.5"/>
+        <rect x="15" y="9" width="6" height="5" fill="#00d2ff"/>
+        <rect x="27" y="9" width="6" height="5" fill="#00d2ff"/>
+        <path d="M25 18L19 26H24L22 33L29 24H24L25 18Z" fill="#70e5ff"/>
+      </svg>
+      <span class="btn-label">EV 배터리</span>
+    </button>
+    <button class="ctrl-btn" data-type="2" id="btn-2">
+      <span class="key-badge">KEY 3</span>
+      <svg width="38" height="38" viewBox="0 0 48 48" fill="none">
+        <circle cx="24" cy="24" r="12" stroke="#2ed573" stroke-width="4" stroke-dasharray="7 4"/>
+        <circle cx="24" cy="24" r="7" stroke="#7bed9f" stroke-width="3"/>
+        <circle cx="24" cy="24" r="2.5" fill="#2ed573"/>
+      </svg>
+      <span class="btn-label">파워트레인 기어</span>
+    </button>
+  </div>
+</div>
+
+<script>
+  const canvas = document.getElementById('game-canvas');
+  const ctx = canvas.getContext('2d');
+
+  const FALL_DURATION = 0.7; // 위에서 아래까지 0.7초
+  const START_Y = 45;
+  const DEADLINE_Y = 395;
+  const FALL_SPEED = (DEADLINE_Y - START_Y) / FALL_DURATION;
+
+  const PARTS = [
+    { name: 'TIRE', color: '#ff4757', glow: 'rgba(255, 71, 87, 0.5)' },
+    { name: 'BATTERY', color: '#00d2ff', glow: 'rgba(0, 210, 255, 0.5)' },
+    { name: 'GEAR', color: '#2ed573', glow: 'rgba(46, 213, 115, 0.5)' }
+  ];
+
+  let isPlaying = false;
+  let score = 0;
+  let mistakes = 0;
+  let timeLeft = 60.0;
+  let currentPart = null;
+  let lastTime = 0;
+  let beltOffset = 0;
+  let plusTimer = 0;
+  let flashEffect = { alpha: 0, color: '#00d2ff' };
+  let particles = [];
+
+  const scoreEl = document.getElementById('score-val');
+  const timeEl = document.getElementById('time-val');
+  const dots = document.querySelectorAll('#mistake-dots .dot');
+  const overlay = document.getElementById('overlay');
+  const modalTitle = document.getElementById('modal-title');
+  const modalDesc = document.getElementById('modal-desc');
+  const resultBox = document.getElementById('result-box');
+  const finalPack = document.getElementById('final-pack');
+  const actionBtn = document.getElementById('action-btn');
+
+  function spawnPart() {
+    currentPart = {
+      type: Math.floor(Math.random() * 3),
+      y: START_Y
+    };
+  }
+
+  function updateHUD() {
+    scoreEl.textContent = score;
+    timeEl.textContent = Math.max(0, timeLeft).toFixed(1);
+    dots.forEach((dot, idx) => {
+      dot.classList.toggle('active', idx < mistakes);
+    });
+  }
+
+  function createParticles(x, y, color) {
+    for (let i = 0; i < 14; i++) {
+      const angle = Math.random() * Math.PI * 2;
+      const speed = 60 + Math.random() * 140;
+      particles.push({
+        x, y,
+        vx: Math.cos(angle) * speed,
+        vy: Math.sin(angle) * speed,
+        life: 0.35,
+        color
+      });
+    }
+  }
+
+  function drawPartPod(x, y, type) {
+    const info = PARTS[type];
+    ctx.save();
+    ctx.translate(x, y);
+
+    // 네온 외곽 후광
+    ctx.shadowColor = info.color;
+    ctx.shadowBlur = 18;
+
+    // 부품 컨테이너 캡슐
+    ctx.fillStyle = 'rgba(12, 22, 40, 0.92)';
+    ctx.strokeStyle = info.color;
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.roundRect(-42, -42, 84, 84, 18);
+    ctx.fill();
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+
+    // 부품 종류별 고해상도 벡터 그래픽
+    if (type === 0) {
+      // 타이어 모듈
+      ctx.strokeStyle = '#ff4757';
+      ctx.lineWidth = 7;
+      ctx.setLineDash([8, 4]);
+      ctx.beginPath(); ctx.arc(0, 0, 24, 0, Math.PI * 2); ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.strokeStyle = '#ff8fa3';
+      ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.arc(0, 0, 14, 0, Math.PI * 2); ctx.stroke();
+      ctx.fillStyle = '#ff4757';
+      ctx.beginPath(); ctx.arc(0, 0, 5, 0, Math.PI * 2); ctx.fill();
+    } else if (type === 1) {
+      // EV 고전압 배터리
+      ctx.strokeStyle = '#00d2ff';
+      ctx.lineWidth = 3.5;
+      ctx.strokeRect(-20, -14, 40, 30);
+      ctx.fillStyle = '#00d2ff';
+      ctx.fillRect(-13, -20, 8, 6);
+      ctx.fillRect(5, -20, 8, 6);
+      // 번개 심볼
+      ctx.fillStyle = '#70e5ff';
+      ctx.beginPath();
+      ctx.moveTo(2, -10); ctx.lineTo(-7, 2); ctx.lineTo(0, 2);
+      ctx.lineTo(-3, 12); ctx.lineTo(8, -1); ctx.lineTo(1, -1);
+      ctx.closePath(); ctx.fill();
+    } else {
+      // 파워트레인 기어
+      ctx.strokeStyle = '#2ed573';
+      ctx.lineWidth = 6;
+      ctx.setLineDash([9, 5]);
+      ctx.beginPath(); ctx.arc(0, 0, 22, 0, Math.PI * 2); ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.strokeStyle = '#7bed9f';
+      ctx.lineWidth = 4;
+      ctx.beginPath(); ctx.arc(0, 0, 12, 0, Math.PI * 2); ctx.stroke();
+      ctx.fillStyle = '#2ed573';
+      ctx.beginPath(); ctx.arc(0, 0, 4, 0, Math.PI * 2); ctx.fill();
+    }
+
+    // 키 번호 힌트 배지
+    ctx.fillStyle = info.color;
+    ctx.font = '900 11px Pretendard, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(`#${type + 1} ${info.name}`, 0, 36);
+    ctx.restore();
+  }
+
+  function render() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    // 컨베이어 트랙 배경
+    const trackX = 95, trackW = 170;
+    const grad = ctx.createLinearGradient(trackX, 0, trackX + trackW, 0);
+    grad.addColorStop(0, 'rgba(10, 20, 38, 0.85)');
+    grad.addColorStop(0.5, 'rgba(22, 42, 74, 0.9)');
+    grad.addColorStop(1, 'rgba(10, 20, 38, 0.85)');
+    ctx.fillStyle = grad;
+    ctx.fillRect(trackX, 0, trackW, canvas.height);
+
+    // 컨베이어 네온 가이드 레일
+    ctx.strokeStyle = 'rgba(0, 195, 255, 0.45)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(trackX, 0); ctx.lineTo(trackX, canvas.height);
+    ctx.moveTo(trackX + trackW, 0); ctx.lineTo(trackX + trackW, canvas.height);
+    ctx.stroke();
+
+    // 움직이는 컨베이어 벨트 라인
+    ctx.strokeStyle = 'rgba(125, 211, 252, 0.16)';
+    ctx.lineWidth = 3;
+    for (let y = (beltOffset % 40) - 40; y < canvas.height; y += 40) {
+      ctx.beginPath();
+      ctx.moveTo(trackX + 12, y);
+      ctx.lineTo(trackX + trackW - 12, y);
+      ctx.stroke();
+    }
+
+    // 하단 스캔 데드라인 (0.7초 한계선)
+    ctx.strokeStyle = '#ff4757';
+    ctx.lineWidth = 2;
+    ctx.setLineDash([6, 6]);
+    ctx.beginPath();
+    ctx.moveTo(40, DEADLINE_Y);
+    ctx.lineTo(320, DEADLINE_Y);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    ctx.fillStyle = '#ff6b81';
+    ctx.font = '800 11px Pretendard, sans-serif';
+    ctx.textAlign = 'right';
+    ctx.fillText('SCAN LIMIT (0.7s)', 318, DEADLINE_Y - 6);
+
+    // 화면 플래시 효과
+    if (flashEffect.alpha > 0) {
+      ctx.fillStyle = flashEffect.color;
+      ctx.globalAlpha = flashEffect.alpha;
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.globalAlpha = 1;
+    }
+
+    // 낙하 중인 자동차 부품 그리기
+    if (currentPart && isPlaying) {
+      drawPartPod(canvas.width / 2, currentPart.y, currentPart.type);
+    }
+
+    // 파티클 이펙트
+    particles.forEach(p => {
+      ctx.fillStyle = p.color;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, 3.5, 0, Math.PI * 2);
+      ctx.fill();
+    });
+
+    // +1 피드백 (0.5초간 표시)
+    if (plusTimer > 0) {
+      ctx.save();
+      ctx.font = '900 44px Pretendard, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillStyle = '#38bdf8';
+      ctx.shadowColor = '#00d2ff';
+      ctx.shadowBlur = 16;
+      ctx.fillText('+1', canvas.width / 2, 215 - (0.5 - plusTimer) * 40);
+      ctx.restore();
+    }
+  }
+
+  function gameLoop(timestamp) {
+    if (!isPlaying) return;
+    if (!lastTime) lastTime = timestamp;
+    const dt = (timestamp - lastTime) / 1000;
+    lastTime = timestamp;
+
+    // 60초 타이머 감소
+    timeLeft -= dt;
+    if (timeLeft <= 0) {
+      timeLeft = 0;
+      updateHUD();
+      return endGame();
+    }
+
+    // 컨베이어 벨트 및 부품 이동
+    beltOffset += FALL_SPEED * dt;
+    currentPart.y += FALL_SPEED * dt;
+
+    if (plusTimer > 0) plusTimer = Math.max(0, plusTimer - dt);
+    if (flashEffect.alpha > 0) flashEffect.alpha = Math.max(0, flashEffect.alpha - dt * 2.5);
+
+    particles.forEach(p => {
+      p.x += p.vx * dt;
+      p.y += p.vy * dt;
+      p.life -= dt;
+    });
+    particles = particles.filter(p => p.life > 0);
+
+    // 바닥 데드라인 통과 시 오답 처리
+    if (currentPart.y >= DEADLINE_Y) {
+      mistakes++;
+      flashEffect = { alpha: 0.28, color: '#ff4757' };
+      updateHUD();
+      if (mistakes >= 4) return endGame();
+      spawnPart();
+    }
+
+    updateHUD();
+    render();
+    requestAnimationFrame(gameLoop);
+  }
+
+  function handleSelect(selectedType) {
+    if (!isPlaying || !currentPart) return;
+
+    const btn = document.getElementById(`btn-${selectedType}`);
+    if (btn) {
+      btn.classList.add('pressed');
+      setTimeout(() => btn.classList.remove('pressed'), 90);
+    }
+
+    if (currentPart.type === selectedType) {
+      score++;
+      plusTimer = 0.5; // 0.5초간 +1 표시
+      createParticles(canvas.width / 2, currentPart.y, PARTS[selectedType].color);
+      flashEffect = { alpha: 0.14, color: PARTS[selectedType].color };
+    } else {
+      mistakes++;
+      flashEffect = { alpha: 0.3, color: '#ff4757' };
+      if (mistakes >= 4) {
+        updateHUD();
+        return endGame();
+      }
+    }
+    updateHUD();
+    spawnPart(); // 판정 직후 즉시 다음 부품 낙하
+    render();
+  }
+
+  function startGame() {
+    isPlaying = true;
+    score = 0;
+    mistakes = 0;
+    timeLeft = 60.0;
+    plusTimer = 0;
+    particles = [];
+    lastTime = 0;
+    overlay.style.display = 'none';
+    spawnPart();
+    updateHUD();
+    requestAnimationFrame(gameLoop);
+  }
+
+  function endGame() {
+    isPlaying = false;
+    overlay.style.display = 'flex';
+    modalTitle.textContent = 'GAME OVER';
+    modalDesc.textContent = mistakes >= 4
+      ? '불량 허용 한도(4개)를 초과하여 라인이 정지되었습니다.'
+      : '60초 작업 시간이 종료되었습니다.';
+    resultBox.style.display = 'block';
+    finalPack.textContent = `패킹 ${score}개`;
+    actionBtn.textContent = '다시하기';
+  }
+
+  // 모바일 터치 대응 수정 완료
+  actionBtn.addEventListener('pointerdown', (e) => {
+    e.preventDefault();
+    startGame();
+  });
+  actionBtn.addEventListener('click', startGame);
+
+  [0, 1, 2].forEach(i => {
+    const btn = document.getElementById(`btn-${i}`);
+    btn.addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      handleSelect(i);
+    });
+  });
+
+  window.addEventListener('keydown', (e) => {
+    if (e.key === '1' || e.key === '2' || e.key === '3') {
+      handleSelect(Number(e.key) - 1);
+    }
+  });
+
+  render();
+</script>
+</body>
+</html>
