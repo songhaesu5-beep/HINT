@@ -326,7 +326,7 @@
   const START_Y = 45;
   const DEADLINE_Y = 395;
   const FALL_SPEED = (DEADLINE_Y - START_Y) / FALL_DURATION;
-
+  
   const PARTS = [
     { name: 'TIRE', color: '#ff4757', glow: 'rgba(255, 71, 87, 0.5)' },
     { name: 'BATTERY', color: '#00d2ff', glow: 'rgba(0, 210, 255, 0.5)' },
@@ -343,6 +343,14 @@
   let plusTimer = 0;
   let flashEffect = { alpha: 0, color: '#00d2ff' };
   let particles = [];
+  
+  // 롱 프레스 콤보 관련 상태
+  let longPressTargetType = null;
+  let comboCount = 0; // 남은 콤보 부품 수
+  let totalComboLength = 0; // 이번 콤보의 전체 길이 (3, 5, 9 등)
+  let isLongPressing = false;
+  let longPressTimer = 0;
+  let currentPressedKey = null;
 
   const scoreEl = document.getElementById('score-val');
   const timeEl = document.getElementById('time-val');
@@ -355,10 +363,49 @@
   const actionBtn = document.getElementById('action-btn');
 
   function spawnPart() {
+    // 25% 확률로 롱 프레스 콤보 발동
+    if (Math.random() < 0.25) {
+      longPressTargetType = Math.floor(Math.random() * 3);
+      // 콤보 길이 랜덤 결정: 3연속, 5연속, 9연속
+      const comboLengths = [3, 5, 9];
+      totalComboLength = comboLengths[Math.floor(Math.random() * comboLengths.length)];
+      comboCount = totalComboLength;
+    } else {
+      longPressTargetType = null;
+      totalComboLength = 0;
+      comboCount = 0;
+    }
+    
+    // 콤보 중일 때는 해당 부품으로 고정, 아닐 때는 랜덤
+    const type = longPressTargetType !== null ? longPressTargetType : Math.floor(Math.random() * 3);
+    
     currentPart = {
-      type: Math.floor(Math.random() * 3),
-      y: START_Y
+      type: type,
+      y: START_Y,
+      isLongPress: longPressTargetType !== null,
+      comboProgress: longPressTargetType !== null ? (totalComboLength - comboCount + 1) : 0, // 몇 번째 콤보인지
+      totalCombo: totalComboLength
     };
+  }
+  
+  function nextComboPart() {
+      comboCount--;
+      if (comboCount > 0) {
+          currentPart = {
+              type: longPressTargetType,
+              y: START_Y,
+              isLongPress: true,
+              comboProgress: totalComboLength - comboCount + 1,
+              totalCombo: totalComboLength
+          };
+      } else {
+          // 콤보 완료 후 추가 점수 부여 등의 로직 추가 가능
+          score += 2; // 콤보 완성 보너스
+          plusTimer = 0.5;
+          flashEffect = { alpha: 0.4, color: PARTS[longPressTargetType].color }; // 강한 플래시
+          longPressTargetType = null;
+          spawnPart();
+      }
   }
 
   function updateHUD() {
@@ -369,92 +416,84 @@
     });
   }
 
-  function createParticles(x, y, color) {
-    for (let i = 0; i < 14; i++) {
+  function createParticles(x, y, color, amount = 14) {
+    for (let i = 0; i < amount; i++) {
       const angle = Math.random() * Math.PI * 2;
       const speed = 60 + Math.random() * 140;
       particles.push({
         x, y,
         vx: Math.cos(angle) * speed,
         vy: Math.sin(angle) * speed,
-        life: 0.35,
+        life: 0.35 + Math.random() * 0.2, // 수명 약간 증가
         color
       });
     }
   }
 
-  function drawPartPod(x, y, type) {
+  function drawPartPod(x, y, type, isLongPress, comboProgress, totalCombo) {
     const info = PARTS[type];
     ctx.save();
     ctx.translate(x, y);
 
-    // 네온 외곽 후광
     ctx.shadowColor = info.color;
-    ctx.shadowBlur = 18;
+    ctx.shadowBlur = isLongPress ? 25 : 18; // 콤보 파트는 후광 강화
 
-    // 부품 컨테이너 캡슐
-    ctx.fillStyle = 'rgba(12, 22, 40, 0.92)';
+    // 콤보 중일 때는 배경색 점멸 효과 및 테두리 점선
+    ctx.fillStyle = isLongPress ? 'rgba(30, 20, 40, 0.95)' : 'rgba(12, 22, 40, 0.92)';
     ctx.strokeStyle = info.color;
-    ctx.lineWidth = 3;
+    ctx.lineWidth = isLongPress ? 4 : 3;
     ctx.beginPath();
     ctx.roundRect(-42, -42, 84, 84, 18);
     ctx.fill();
+    
+    if (isLongPress) {
+       ctx.setLineDash([8, 6]);
+    }
     ctx.stroke();
+    ctx.setLineDash([]);
     ctx.shadowBlur = 0;
 
-    // 부품 종류별 고해상도 벡터 그래픽
-    if (type === 0) {
-      // 타이어 모듈
-      ctx.strokeStyle = '#ff4757';
-      ctx.lineWidth = 7;
-      ctx.setLineDash([8, 4]);
+    // 부품 고해상도 그래픽
+    if (type === 0) { // 타이어
+      ctx.strokeStyle = '#ff4757'; ctx.lineWidth = 7; ctx.setLineDash([8, 4]);
       ctx.beginPath(); ctx.arc(0, 0, 24, 0, Math.PI * 2); ctx.stroke();
-      ctx.setLineDash([]);
-      ctx.strokeStyle = '#ff8fa3';
-      ctx.lineWidth = 3;
+      ctx.setLineDash([]); ctx.strokeStyle = '#ff8fa3'; ctx.lineWidth = 3;
       ctx.beginPath(); ctx.arc(0, 0, 14, 0, Math.PI * 2); ctx.stroke();
-      ctx.fillStyle = '#ff4757';
-      ctx.beginPath(); ctx.arc(0, 0, 5, 0, Math.PI * 2); ctx.fill();
-    } else if (type === 1) {
-      // EV 고전압 배터리
-      ctx.strokeStyle = '#00d2ff';
-      ctx.lineWidth = 3.5;
-      ctx.strokeRect(-20, -14, 40, 30);
-      ctx.fillStyle = '#00d2ff';
-      ctx.fillRect(-13, -20, 8, 6);
-      ctx.fillRect(5, -20, 8, 6);
-      // 번개 심볼
-      ctx.fillStyle = '#70e5ff';
-      ctx.beginPath();
-      ctx.moveTo(2, -10); ctx.lineTo(-7, 2); ctx.lineTo(0, 2);
-      ctx.lineTo(-3, 12); ctx.lineTo(8, -1); ctx.lineTo(1, -1);
+      ctx.fillStyle = '#ff4757'; ctx.beginPath(); ctx.arc(0, 0, 5, 0, Math.PI * 2); ctx.fill();
+    } else if (type === 1) { // 배터리
+      ctx.strokeStyle = '#00d2ff'; ctx.lineWidth = 3.5; ctx.strokeRect(-20, -14, 40, 30);
+      ctx.fillStyle = '#00d2ff'; ctx.fillRect(-13, -20, 8, 6); ctx.fillRect(5, -20, 8, 6);
+      ctx.fillStyle = '#70e5ff'; ctx.beginPath();
+      ctx.moveTo(2, -10); ctx.lineTo(-7, 2); ctx.lineTo(0, 2); ctx.lineTo(-3, 12); ctx.lineTo(8, -1); ctx.lineTo(1, -1);
       ctx.closePath(); ctx.fill();
-    } else {
-      // 파워트레인 기어
-      ctx.strokeStyle = '#2ed573';
-      ctx.lineWidth = 6;
-      ctx.setLineDash([9, 5]);
+    } else { // 기어
+      ctx.strokeStyle = '#2ed573'; ctx.lineWidth = 6; ctx.setLineDash([9, 5]);
       ctx.beginPath(); ctx.arc(0, 0, 22, 0, Math.PI * 2); ctx.stroke();
-      ctx.setLineDash([]);
-      ctx.strokeStyle = '#7bed9f';
-      ctx.lineWidth = 4;
+      ctx.setLineDash([]); ctx.strokeStyle = '#7bed9f'; ctx.lineWidth = 4;
       ctx.beginPath(); ctx.arc(0, 0, 12, 0, Math.PI * 2); ctx.stroke();
-      ctx.fillStyle = '#2ed573';
-      ctx.beginPath(); ctx.arc(0, 0, 4, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#2ed573'; ctx.beginPath(); ctx.arc(0, 0, 4, 0, Math.PI * 2); ctx.fill();
     }
 
-    // 키 번호 힌트 배지
     ctx.fillStyle = info.color;
-    ctx.font = '900 11px Pretendard, sans-serif';
     ctx.textAlign = 'center';
-    ctx.fillText(`#${type + 1} ${info.name}`, 0, 36);
+    
+    // 텍스트 표시
+    if (isLongPress) {
+        ctx.font = '900 12px Pretendard, sans-serif';
+        // 홀드 지시와 콤보 진행 상황 (예: HOLD 1/3)
+        ctx.fillText(`HOLD ${comboProgress}/${totalCombo}`, 0, 36);
+    } else {
+        ctx.font = '900 11px Pretendard, sans-serif';
+        ctx.fillText(`#${type + 1} ${info.name}`, 0, 36);
+    }
+    
     ctx.restore();
   }
 
   function render() {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-    // 컨베이어 트랙 배경
+    // 컨베이어 배경
     const trackX = 95, trackW = 170;
     const grad = ctx.createLinearGradient(trackX, 0, trackX + trackW, 0);
     grad.addColorStop(0, 'rgba(10, 20, 38, 0.85)');
@@ -463,7 +502,7 @@
     ctx.fillStyle = grad;
     ctx.fillRect(trackX, 0, trackW, canvas.height);
 
-    // 컨베이어 네온 가이드 레일
+    // 가이드 레일
     ctx.strokeStyle = 'rgba(0, 195, 255, 0.45)';
     ctx.lineWidth = 2;
     ctx.beginPath();
@@ -471,61 +510,59 @@
     ctx.moveTo(trackX + trackW, 0); ctx.lineTo(trackX + trackW, canvas.height);
     ctx.stroke();
 
-    // 움직이는 컨베이어 벨트 라인
+    // 움직이는 벨트 라인
     ctx.strokeStyle = 'rgba(125, 211, 252, 0.16)';
     ctx.lineWidth = 3;
     for (let y = (beltOffset % 40) - 40; y < canvas.height; y += 40) {
       ctx.beginPath();
-      ctx.moveTo(trackX + 12, y);
-      ctx.lineTo(trackX + trackW - 12, y);
+      ctx.moveTo(trackX + 12, y); ctx.lineTo(trackX + trackW - 12, y);
       ctx.stroke();
     }
 
-    // 하단 스캔 데드라인 (0.7초 한계선)
-    ctx.strokeStyle = '#ff4757';
-    ctx.lineWidth = 2;
-    ctx.setLineDash([6, 6]);
-    ctx.beginPath();
-    ctx.moveTo(40, DEADLINE_Y);
-    ctx.lineTo(320, DEADLINE_Y);
-    ctx.stroke();
-    ctx.setLineDash([]);
-
-    ctx.fillStyle = '#ff6b81';
-    ctx.font = '800 11px Pretendard, sans-serif';
-    ctx.textAlign = 'right';
+    // 데드라인
+    ctx.strokeStyle = '#ff4757'; ctx.lineWidth = 2; ctx.setLineDash([6, 6]);
+    ctx.beginPath(); ctx.moveTo(40, DEADLINE_Y); ctx.lineTo(320, DEADLINE_Y);
+    ctx.stroke(); ctx.setLineDash([]);
+    ctx.fillStyle = '#ff6b81'; ctx.font = '800 11px Pretendard, sans-serif'; ctx.textAlign = 'right';
     ctx.fillText('SCAN LIMIT (0.7s)', 318, DEADLINE_Y - 6);
+    
+    // 롱 프레스 진행률 게이지 (Hold)
+    if (isLongPressing && currentPart && currentPart.isLongPress && currentPressedKey === currentPart.type) {
+        // 요구되는 롱 프레스 시간 (콤보 연속 수에 비례)
+        // 3연속: 1.5초, 5연속: 2.5초, 9연속: 4.5초
+        const requiredTime = currentPart.totalCombo * 0.5;
+        const progress = Math.min(longPressTimer / requiredTime, 1);
+        
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
+        ctx.fillRect(trackX, canvas.height - 15, trackW, 10);
+        ctx.fillStyle = PARTS[currentPart.type].color;
+        ctx.shadowColor = PARTS[currentPart.type].color;
+        ctx.shadowBlur = 10;
+        ctx.fillRect(trackX, canvas.height - 15, trackW * progress, 10);
+        ctx.shadowBlur = 0;
+    }
 
-    // 화면 플래시 효과
     if (flashEffect.alpha > 0) {
-      ctx.fillStyle = flashEffect.color;
-      ctx.globalAlpha = flashEffect.alpha;
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
-      ctx.globalAlpha = 1;
+      ctx.fillStyle = flashEffect.color; ctx.globalAlpha = flashEffect.alpha;
+      ctx.fillRect(0, 0, canvas.width, canvas.height); ctx.globalAlpha = 1;
     }
 
-    // 낙하 중인 자동차 부품 그리기
     if (currentPart && isPlaying) {
-      drawPartPod(canvas.width / 2, currentPart.y, currentPart.type);
+      drawPartPod(canvas.width / 2, currentPart.y, currentPart.type, currentPart.isLongPress, currentPart.comboProgress, currentPart.totalCombo);
     }
 
-    // 파티클 이펙트
     particles.forEach(p => {
-      ctx.fillStyle = p.color;
-      ctx.beginPath();
-      ctx.arc(p.x, p.y, 3.5, 0, Math.PI * 2);
-      ctx.fill();
+      ctx.fillStyle = p.color; ctx.beginPath(); ctx.arc(p.x, p.y, 3.5, 0, Math.PI * 2); ctx.fill();
     });
 
-    // +1 피드백 (0.5초간 표시)
     if (plusTimer > 0) {
-      ctx.save();
-      ctx.font = '900 44px Pretendard, sans-serif';
-      ctx.textAlign = 'center';
-      ctx.fillStyle = '#38bdf8';
-      ctx.shadowColor = '#00d2ff';
-      ctx.shadowBlur = 16;
-      ctx.fillText('+1', canvas.width / 2, 215 - (0.5 - plusTimer) * 40);
+      ctx.save(); ctx.font = '900 44px Pretendard, sans-serif'; ctx.textAlign = 'center';
+      ctx.fillStyle = '#38bdf8'; ctx.shadowColor = '#00d2ff'; ctx.shadowBlur = 16;
+      
+      // 콤보 보너스 텍스트
+      const text = (currentPart && currentPart.comboProgress === currentPart.totalCombo) ? 'COMBO!' : '+1';
+      
+      ctx.fillText(text, canvas.width / 2, 215 - (0.5 - plusTimer) * 40);
       ctx.restore();
     }
   }
@@ -536,115 +573,138 @@
     const dt = (timestamp - lastTime) / 1000;
     lastTime = timestamp;
 
-    // 60초 타이머 감소
     timeLeft -= dt;
-    if (timeLeft <= 0) {
-      timeLeft = 0;
-      updateHUD();
-      return endGame();
-    }
+    if (timeLeft <= 0) { timeLeft = 0; updateHUD(); return endGame(); }
 
-    // 컨베이어 벨트 및 부품 이동
-    beltOffset += FALL_SPEED * dt;
-    currentPart.y += FALL_SPEED * dt;
+    if (!isLongPressing || !currentPart || !currentPart.isLongPress || currentPressedKey !== currentPart.type) {
+        beltOffset += FALL_SPEED * dt;
+        currentPart.y += FALL_SPEED * dt;
+    } else {
+        longPressTimer += dt;
+        // 콤보 하나당 0.5초 처리
+        const requiredTime = 0.5 * currentPart.comboProgress;
+        
+        if (longPressTimer >= requiredTime) {
+            score++;
+            plusTimer = 0.5;
+            createParticles(canvas.width / 2, currentPart.y, PARTS[currentPart.type].color, 5); // 콤보 중에는 작은 파티클
+            
+            if (currentPart.comboProgress === currentPart.totalCombo) {
+                 // 전체 콤보 완료
+                 isLongPressing = false;
+                 currentPressedKey = null;
+                 longPressTimer = 0; // 초기화
+                 createParticles(canvas.width / 2, currentPart.y, PARTS[currentPart.type].color, 30); // 콤보 끝날 때 큰 파티클
+            }
+            
+            updateHUD();
+            nextComboPart();
+            render();
+            requestAnimationFrame(gameLoop);
+            return;
+        }
+    }
 
     if (plusTimer > 0) plusTimer = Math.max(0, plusTimer - dt);
     if (flashEffect.alpha > 0) flashEffect.alpha = Math.max(0, flashEffect.alpha - dt * 2.5);
 
-    particles.forEach(p => {
-      p.x += p.vx * dt;
-      p.y += p.vy * dt;
-      p.life -= dt;
-    });
+    particles.forEach(p => { p.x += p.vx * dt; p.y += p.vy * dt; p.life -= dt; });
     particles = particles.filter(p => p.life > 0);
 
-    // 바닥 데드라인 통과 시 오답 처리
     if (currentPart.y >= DEADLINE_Y) {
-      mistakes++;
-      flashEffect = { alpha: 0.28, color: '#ff4757' };
-      updateHUD();
-      if (mistakes >= 4) return endGame();
-      spawnPart();
+      handleMistake();
+      return; // handleMistake에서 spawnPart 호출함
     }
 
-    updateHUD();
-    render();
-    requestAnimationFrame(gameLoop);
+    updateHUD(); render(); requestAnimationFrame(gameLoop);
   }
 
-  function handleSelect(selectedType) {
+  function handleActionDown(selectedType) {
     if (!isPlaying || !currentPart) return;
 
     const btn = document.getElementById(`btn-${selectedType}`);
-    if (btn) {
-      btn.classList.add('pressed');
-      setTimeout(() => btn.classList.remove('pressed'), 90);
-    }
+    if (btn) btn.classList.add('pressed');
+    
+    currentPressedKey = selectedType;
 
-    if (currentPart.type === selectedType) {
-      score++;
-      plusTimer = 0.5; // 0.5초간 +1 표시
-      createParticles(canvas.width / 2, currentPart.y, PARTS[selectedType].color);
-      flashEffect = { alpha: 0.14, color: PARTS[selectedType].color };
+    if (currentPart.isLongPress) {
+        if (currentPart.type === selectedType) {
+            isLongPressing = true;
+            // longPressTimer는 이어서 가야하므로 여기서 초기화 안함 (콤보 도중 눌렀다 떼면 처음부터 다시인지 기획에 따라 다름)
+            // 여기서는 누를 때마다 처음부터 0.5초 * 현재진행도 만큼 누르는게 아니라, 누적된 타이머를 씀.
+        } else {
+            handleMistake();
+        }
     } else {
+        if (currentPart.type === selectedType) {
+          score++; plusTimer = 0.5;
+          createParticles(canvas.width / 2, currentPart.y, PARTS[selectedType].color);
+          flashEffect = { alpha: 0.14, color: PARTS[selectedType].color };
+          updateHUD(); spawnPart();
+        } else {
+          handleMistake();
+        }
+    }
+    render();
+  }
+  
+  function handleActionUp(selectedType) {
+      const btn = document.getElementById(`btn-${selectedType}`);
+      if (btn) btn.classList.remove('pressed');
+      
+      if (currentPressedKey === selectedType) {
+          if (isLongPressing) {
+             isLongPressing = false;
+             handleMistake(); // 중간에 손을 떼면 실패
+          }
+          currentPressedKey = null;
+      }
+  }
+  
+  function handleMistake() {
       mistakes++;
       flashEffect = { alpha: 0.3, color: '#ff4757' };
-      if (mistakes >= 4) {
-        updateHUD();
-        return endGame();
-      }
-    }
-    updateHUD();
-    spawnPart(); // 판정 직후 즉시 다음 부품 낙하
-    render();
+      isLongPressing = false;
+      currentPressedKey = null;
+      longPressTimer = 0; // 콤보 실패시 타이머 완전 리셋
+      if (mistakes >= 4) { updateHUD(); return endGame(); }
+      updateHUD();
+      longPressTargetType = null;
+      totalComboLength = 0;
+      comboCount = 0;
+      spawnPart();
   }
 
   function startGame() {
-    isPlaying = true;
-    score = 0;
-    mistakes = 0;
-    timeLeft = 60.0;
-    plusTimer = 0;
-    particles = [];
-    lastTime = 0;
+    isPlaying = true; score = 0; mistakes = 0; timeLeft = 60.0; plusTimer = 0; particles = []; lastTime = 0;
+    longPressTargetType = null; comboCount = 0; totalComboLength = 0; isLongPressing = false; longPressTimer = 0; currentPressedKey = null;
     overlay.style.display = 'none';
-    spawnPart();
-    updateHUD();
-    requestAnimationFrame(gameLoop);
+    spawnPart(); updateHUD(); requestAnimationFrame(gameLoop);
   }
 
   function endGame() {
-    isPlaying = false;
-    overlay.style.display = 'flex';
+    isPlaying = false; overlay.style.display = 'flex';
     modalTitle.textContent = 'GAME OVER';
-    modalDesc.textContent = mistakes >= 4
-      ? '불량 허용 한도(4개)를 초과하여 라인이 정지되었습니다.'
-      : '60초 작업 시간이 종료되었습니다.';
-    resultBox.style.display = 'block';
-    finalPack.textContent = `패킹 ${score}개`;
-    actionBtn.textContent = '다시하기';
+    modalDesc.textContent = mistakes >= 4 ? '불량 허용 한도(4개)를 초과하여 라인이 정지되었습니다.' : '60초 작업 시간이 종료되었습니다.';
+    resultBox.style.display = 'block'; finalPack.textContent = `패킹 ${score}개`; actionBtn.textContent = '다시하기';
   }
 
-  // 모바일 터치 대응 수정 완료
-  actionBtn.addEventListener('pointerdown', (e) => {
-    e.preventDefault();
-    startGame();
-  });
+  actionBtn.addEventListener('touchstart', (e) => { e.preventDefault(); startGame(); }, { passive: false });
+  actionBtn.addEventListener('pointerdown', (e) => { e.preventDefault(); startGame(); });
   actionBtn.addEventListener('click', startGame);
 
   [0, 1, 2].forEach(i => {
     const btn = document.getElementById(`btn-${i}`);
-    btn.addEventListener('pointerdown', (e) => {
-      e.preventDefault();
-      handleSelect(i);
-    });
+    btn.addEventListener('touchstart', (e) => { e.preventDefault(); handleActionDown(i); }, { passive: false });
+    btn.addEventListener('touchend', (e) => { e.preventDefault(); handleActionUp(i); }, { passive: false });
+    btn.addEventListener('touchcancel', (e) => { e.preventDefault(); handleActionUp(i); }, { passive: false });
+    btn.addEventListener('mousedown', (e) => { e.preventDefault(); handleActionDown(i); });
+    btn.addEventListener('mouseup', (e) => { e.preventDefault(); handleActionUp(i); });
+    btn.addEventListener('mouseleave', (e) => { e.preventDefault(); handleActionUp(i); });
   });
 
-  window.addEventListener('keydown', (e) => {
-    if (e.key === '1' || e.key === '2' || e.key === '3') {
-      handleSelect(Number(e.key) - 1);
-    }
-  });
+  window.addEventListener('keydown', (e) => { if (e.repeat) return; if (e.key >= '1' && e.key <= '3') handleActionDown(Number(e.key) - 1); });
+  window.addEventListener('keyup', (e) => { if (e.key >= '1' && e.key <= '3') handleActionUp(Number(e.key) - 1); });
 
   render();
 </script>
